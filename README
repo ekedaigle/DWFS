@@ -1,0 +1,1 @@
+This is a FUSE filesystem for storing files in a variety of free storage services online, such as Dropbox and Google Docs. It is in its early stages, but hopefully more will be added soon.
