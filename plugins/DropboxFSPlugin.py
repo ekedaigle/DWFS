@@ -1,10 +1,26 @@
+import argparse
 import os
 from FSPlugin import FSPlugin
 
 class DropboxFSPlugin(FSPlugin):
-	def __init__(self, source_dir):
-		self.source_dir = source_dir
+	@staticmethod
+	def addArguments(parser):
+		parser.add_argument('--dropbox', dest='dropbox_dirs', nargs='+', help='Use the given Dropbox folder')
+	
+	@staticmethod
+	def createFromArgs(args):
+		dirs = args.dropbox_dirs
+		dropbox_plugins = []
 
+		for d in dirs:
+			dropbox_plugins.append(DropboxFSPlugin(d))
+		
+		return dropbox_plugins
+
+	def __init__(self, dropbox_dir):
+		print 'Called __init__'
+		self.source_dir = dropbox_dir
+	
 	def getAllFiles(self):
 		for f in os.listdir(self.source_dir):
 			yield '/' + f

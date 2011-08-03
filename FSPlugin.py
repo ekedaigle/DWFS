@@ -1,11 +1,14 @@
 import os
 
-# This is the base class for all plugins. This basic implementation simply
-# reads the requested data from another directory.
+# This is the base class for all plugins
 class FSPlugin:
-	def __init__(self):
+	@staticmethod
+	def addArguments(parser):
 		pass
 
+	def __init__(self, args):
+		pass
+	
 	def getAllFiles(self):
 		return []
 	

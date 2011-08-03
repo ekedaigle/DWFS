@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 import fuse
-import time
 
 from stat import *
 import os	  # for filesystem modes (O_RDONLY, etc)
 import errno   # for error number codes (ENOENT, etc)
 			   # - note: these must be returned as negatives
 
-from DropboxFSPlugin import DropboxFSPlugin
-
-PLUGIN_DIR='/home/ekern/WebFS/test_data'
+from FSPlugin import FSPlugin
 
 def getDepth(path):
 	"""
@@ -20,17 +17,59 @@ def getDepth(path):
 	else:
 		return path.count('/')
 
-class NullFS(fuse.Fuse):
+def find_subclasses(path, cls):
 	"""
+	Find all subclass of cls in py files located below path
+	(does look in sub directories)
+ 
+	@param path: the path to the top level folder to walk
+	@type path: str
+	@param cls: the base class that all subclasses should inherit from
+	@type cls: class
+	@rtype: list
+	@return: a list if classes that are subclasses of cls
 	"""
+ 
+	subclasses=[]
+ 
+	def look_for_subclass(modulename):
+		module=__import__(modulename)
+ 
+		#walk the dictionaries to get to the last one
+		d=module.__dict__
+		for m in modulename.split('.')[1:]:
+			d=d[m].__dict__
+ 
+		#look through this dictionary for things
+		#that are subclass of Job
+		#but are not Job itself
+		for key, entry in d.items():
+			if key == cls.__name__:
+				continue
+ 
+			try:
+				if issubclass(entry, cls):
+					subclasses.append(entry)
+			except TypeError:
+				#this happens when a non-type is passed in to issubclass. We
+				#don't care as it can't be a subclass of Job if it isn't a
+				#type
+				continue
+ 
+	for root, dirs, files in os.walk(path):
+		for name in files:
+			if name.endswith(".py") and not name.startswith("__"):
+				path = os.path.join(root, name)
+				modulename = path.rsplit('.', 1)[0].replace('/', '.')
+				look_for_subclass(modulename)
+ 
+	return subclasses
 
-	def __init__(self, *args, **kw):
+class DWFS(fuse.Fuse):
+
+	def __init__(self, plugins, *args, **kw):
 		fuse.Fuse.__init__(self, *args, **kw)
-		self.plugins = [DropboxFSPlugin(PLUGIN_DIR + '/dir1'),
-						DropboxFSPlugin(PLUGIN_DIR + '/dir2'),
-						DropboxFSPlugin(PLUGIN_DIR + '/dir3'),
-						DropboxFSPlugin(PLUGIN_DIR + '/dir4'),
-						DropboxFSPlugin(PLUGIN_DIR + '/dir5')]
+		self.plugins = plugins
 		self.open_files = dict()
 
 		print 'Init complete.'
@@ -248,8 +287,28 @@ class NullFS(fuse.Fuse):
 			return -errno.ENOENT
 
 if __name__ == '__main__':
+	import argparse, sys
+
+	script_name = sys.argv[0]
+	parser = argparse.ArgumentParser(description='Create a Distributed Web File System (DWFS)')
+	plugin_classes = find_subclasses('plugins/', FSPlugin)
+	
+	for plugin_class in plugin_classes:
+		print plugin_class
+		plugin_class.addArguments(parser)
+	parser.add_argument('--fuse', nargs='*')
+	
+	args = parser.parse_args()
+
+	sys.argv = [x.replace('+', '-', 1) for x in args.fuse]
+	sys.argv.insert(0, script_name)
+
+	plugins = []
+	for plugin_class in plugin_classes:
+		plugins.extend(plugin_class.createFromArgs(args))
+
 	fuse.fuse_python_api = (0, 2)
-	fs = NullFS()
+	fs = DWFS(plugins)
 	fs.flags = 0
 	fs.multithreaded = 0
 	fs.parse(errex=1)
