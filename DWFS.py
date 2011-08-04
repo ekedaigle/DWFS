@@ -69,10 +69,14 @@ class DWFS(fuse.Fuse):
 
 	def __init__(self, plugins, *args, **kw):
 		fuse.Fuse.__init__(self, *args, **kw)
+		self.cwd = os.path.abspath(os.getcwd())
 		self.plugins = plugins
 		self.open_files = dict()
 
 		print 'Init complete.'
+	
+	def fsinit(self):
+		os.chdir(self.cwd)
 
 	def getattr(self, path):
 		"""
