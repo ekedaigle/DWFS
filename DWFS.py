@@ -298,18 +298,24 @@ if __name__ == '__main__':
 	plugin_classes = find_subclasses('plugins/', FSPlugin)
 	
 	for plugin_class in plugin_classes:
-		print plugin_class
 		plugin_class.addArguments(parser)
-	parser.add_argument('--fuse', nargs='*')
+
+	parser.add_argument('-f', '--foreground', action='store_true', help='Run FUSE in the foreground')
+	parser.add_argument('mount_point', help='Path to mount the file system')
 	
 	args = parser.parse_args()
 
-	sys.argv = [x.replace('+', '-', 1) for x in args.fuse]
-	sys.argv.insert(0, script_name)
+	sys.argv = [script_name, args.mount_point]
+
+	if args.foreground:
+		sys.argv.append('-f')
 
 	plugins = []
 	for plugin_class in plugin_classes:
-		plugins.extend(plugin_class.createFromArgs(args))
+		p = plugin_class.createFromArgs(args)
+
+		if p != None:
+			plugins.extend(p)
 
 	fuse.fuse_python_api = (0, 2)
 	fs = DWFS(plugins)

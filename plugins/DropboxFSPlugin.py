@@ -18,7 +18,6 @@ class DropboxFSPlugin(FSPlugin):
 		return dropbox_plugins
 
 	def __init__(self, dropbox_dir):
-		print 'Called __init__'
 		self.source_dir = dropbox_dir
 	
 	def getAllFiles(self):
