@@ -313,6 +313,7 @@ if __name__ == '__main__':
 	plugins = []
 	for plugin_class in plugin_classes:
 		p = plugin_class.createFromArgs(args)
+		print p
 
 		if p != None:
 			plugins.extend(p)

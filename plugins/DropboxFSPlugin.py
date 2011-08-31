@@ -12,8 +12,9 @@ class DropboxFSPlugin(FSPlugin):
 		dirs = args.dropbox_dirs
 		dropbox_plugins = []
 
-		for d in dirs:
-			dropbox_plugins.append(DropboxFSPlugin(d))
+		if dirs != None:
+			for d in dirs:
+				dropbox_plugins.append(DropboxFSPlugin(d))
 		
 		return dropbox_plugins
 
