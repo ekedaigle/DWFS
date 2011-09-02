@@ -285,7 +285,13 @@ class DWFS(fuse.Fuse):
 		print '*** release', path, flags
 
 		if path in self.open_files:
+			self.open_file[path].close()
 			del self.open_files[path]
+
+			for plugin in plugins:
+				if plugin.containsFile(path):
+					plugin.closedFile(path)
+					break
 			return 0
 		else:
 			return -errno.ENOENT
@@ -313,7 +319,6 @@ if __name__ == '__main__':
 	plugins = []
 	for plugin_class in plugin_classes:
 		p = plugin_class.createFromArgs(args)
-		print p
 
 		if p != None:
 			plugins.extend(p)

@@ -58,3 +58,6 @@ class DropboxFSPlugin(FSPlugin):
 
 	def getFileHandle(self, path, flags):
 		return os.open(self.source_dir + path, flags)
+	
+	def closedFile(self, path):
+		pass

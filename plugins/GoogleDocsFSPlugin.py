@@ -4,7 +4,7 @@ from FSPlugin import FSPlugin
 
 OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth'
 OAUTH_TOKEN_URL = 'https://accounts.google.com/o/oauth2/token'
-DOCS_SCOPE = 'https://www.google.com/m8/feeds/'
+DOCS_SCOPE = 'https://docs.google.com/feeds/'
 
 class GoogleDocsFSPlugin(FSPlugin):
 	@staticmethod
@@ -39,8 +39,8 @@ class GoogleDocsFSPlugin(FSPlugin):
 		self.refresh_token = raw_input('Enter access code: ')
 		self.getToken(False)
 
-		print self.access_token
-		print self.refresh_token
+		import time
+		self.refresh_time = 0
 	
 	def getToken(self, refresh):
 		import urllib, urllib2
@@ -61,8 +61,6 @@ class GoogleDocsFSPlugin(FSPlugin):
 				'grant_type' : 'authorization_code'
 			})
 
-		print OAUTH_TOKEN_URL
-		print params
 		f = urllib2.urlopen(OAUTH_TOKEN_URL, params)
 		data = f.read()
 
@@ -70,32 +68,60 @@ class GoogleDocsFSPlugin(FSPlugin):
 		response = json.loads(data)
 		self.access_token = response['access_token']
 		self.refresh_token = response['refresh_token']
-
 	
+	def refreshFiles(self):
+		import time
+
+		if time.time() - self.refresh_time > 10:
+			self.refresh_time = time.time()
+			url = 'https://docs.google.com/feeds/default/private/full?v=3&access_token=' + self.access_token
+
+			try:
+				f = urllib2.urlopen(url)
+				data = f.read()
+			except urllib2.HTTPError, msg:
+				print msg
+				data = None
+
+			if data != None:
+				import xml.dom.minidom as minidom
+				dom = minidom.parseString(data)
+				files = dict()
+
+				for entry in dom.getElementsByTagName('entry'):
+					title_tag = entry.getElementsByTagName('title')[0]
+
+					for node in title.childNodes:
+						if node.nodeType == node.TEXT_NODE:
+							path = '/' + str(node.data.encode('ascii', 'ignore'))
+
+					self.files[path] = entry
+
 	def getAllFiles(self):
-		pass
-#		for f in os.listdir(self.source_dir):
-#			yield '/' + f
+		self.refreshFiles()
+
+		for path in self.files:
+			yield path
 	
 	def containsFile(self, path):
-		pass
-#		return path.replace('/', '') in os.listdir(self.source_dir)
+		return path in self.files
 
 	# TODO: actually check
 	def canStoreFile(self, f):
 		return True
 	
 	def createNewFile(self, name, mode, dev):
-		os.mknod(self.source_dir + '/' + name, mode, dev)
+		pass
+#		os.mknod(self.source_dir + '/' + name, mode, dev)
 	
 	def getAttributes(self, path):
 		return os.stat(self.source_dir + path)
 	
 	def changeMode(self, path, mode):
-		os.chmod(self.source_dir + path, mode)
+		pass
 	
 	def changeOwn(self, path, uid, gid):
-		os.chown(self.source_dir + path, uid, gid)
+		pass
 	
 	def fsync(self, path):
 		os.fsync(self.source_dir + path)
@@ -107,7 +133,10 @@ class GoogleDocsFSPlugin(FSPlugin):
 		os.remove(self.source_dir + path)
 	
 	def setTimes(self, path, times):
-		os.utime(self.source_dir + path, times)
+		pass
 
 	def getFileHandle(self, path, flags):
 		return os.open(self.source_dir + path, flags)
+	
+	def closedFile(self, path):
+		pass
