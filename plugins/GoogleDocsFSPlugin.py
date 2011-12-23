@@ -1,10 +1,14 @@
 import argparse
 import os
+import stat
+import getpass
+import urllib
+import urllib2
 from FSPlugin import FSPlugin
 
 OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth'
 OAUTH_TOKEN_URL = 'https://accounts.google.com/o/oauth2/token'
-DOCS_SCOPE = 'https://docs.google.com/feeds/'
+DOCS_SCOPE = 'https://docs.google.com/feeds/ https://spreadsheets.google.com/feeds/ https://docs.googleusercontent.com/'
 
 class GoogleDocsFSPlugin(FSPlugin):
 	@staticmethod
@@ -14,11 +18,11 @@ class GoogleDocsFSPlugin(FSPlugin):
 	@staticmethod
 	def createFromArgs(args):
 		if args.googledocs:
-			return [GoogleDocsFSPlugin()]
+			return [GoogleDocsFSPlugin(args.mount_point)]
 		else:
 			return None
 
-	def __init__(self):
+	def __init__(self, top_dir):
 		import ConfigParser
 		parser = ConfigParser.RawConfigParser()
 		parser.read('plugins/GoogleDocsFSPlugin.cfg')
@@ -26,7 +30,6 @@ class GoogleDocsFSPlugin(FSPlugin):
 		self.client_secret = parser.get('API Keys', 'client_secret')
 		self.redirect_uri = parser.get('API Keys', 'redirect_uri')
 		
-		import urllib
 		params = urllib.urlencode({
 			'client_id' : self.client_id,
 			'redirect_uri' : self.redirect_uri,
@@ -41,10 +44,12 @@ class GoogleDocsFSPlugin(FSPlugin):
 
 		import time
 		self.refresh_time = 0
+
+		self.files = dict()
+		self.top_dir = top_dir
+		self.cache_dir = '/tmp/dwfs-' + getpass.getuser()
 	
 	def getToken(self, refresh):
-		import urllib, urllib2
-
 		if refresh:
 			params = urllib.urlencode({
 				'client_id' : self.client_id,
@@ -91,7 +96,7 @@ class GoogleDocsFSPlugin(FSPlugin):
 				for entry in dom.getElementsByTagName('entry'):
 					title_tag = entry.getElementsByTagName('title')[0]
 
-					for node in title.childNodes:
+					for node in title_tag.childNodes:
 						if node.nodeType == node.TEXT_NODE:
 							path = '/' + str(node.data.encode('ascii', 'ignore'))
 
@@ -115,7 +120,22 @@ class GoogleDocsFSPlugin(FSPlugin):
 #		os.mknod(self.source_dir + '/' + name, mode, dev)
 	
 	def getAttributes(self, path):
-		return os.stat(self.source_dir + path)
+		os_stat = os.stat('.')
+		attr = [0] * 10
+		attr[stat.ST_MODE] = os_stat[stat.ST_MODE]
+		attr[stat.ST_MODE] &= ~(stat.S_IFDIR | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+		attr[stat.ST_MODE] |= stat.S_IFREG
+		attr[stat.ST_INO] =  os_stat[stat.ST_INO]
+		attr[stat.ST_DEV] = os_stat[stat.ST_DEV]
+		attr[stat.ST_NLINK] = 1
+		attr[stat.ST_UID] = os_stat[stat.ST_UID]
+		attr[stat.ST_GID] = os_stat[stat.ST_GID]
+		attr[stat.ST_SIZE] = 32
+		attr[stat.ST_ATIME] = 0
+		attr[stat.ST_MTIME] = 0
+		attr[stat.ST_CTIME] = 0
+
+		return attr
 	
 	def changeMode(self, path, mode):
 		pass
@@ -136,7 +156,15 @@ class GoogleDocsFSPlugin(FSPlugin):
 		pass
 
 	def getFileHandle(self, path, flags):
-		return os.open(self.source_dir + path, flags)
+		entry = self.files[path]
+		content_tag = entry.getElementsByTagName('content')[0]
+		file_url = content_tag.getAttribute('src')
+		print 'url:', file_url
+		url = urllib2.urlopen(file_url)
+		temp_file = open(self.cache_dir + '/' + path, 'w')
+		temp_file.write(url.read())
+		temp_file.close()
+		return os.open(temp_file, flags)
 	
 	def closedFile(self, path):
 		pass
