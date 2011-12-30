@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import fuse
 
+import logging
 from stat import *
 import os	  # for filesystem modes (O_RDONLY, etc)
 import errno   # for error number codes (ENOENT, etc)
@@ -73,7 +74,7 @@ class DWFS(fuse.Fuse):
 		self.plugins = plugins
 		self.open_files = dict()
 
-		print 'Init complete.'
+		logging.info('Init complete.')
 	
 	def fsinit(self):
 		os.chdir(self.cwd)
@@ -93,7 +94,7 @@ class DWFS(fuse.Fuse):
 					or the time of creation on Windows).
 		"""
 
-		print '*** getattr ', path
+		logging.info('*** getattr %s' % path)
 		os_stat = None
 
 		if path == '/':
@@ -134,15 +135,15 @@ class DWFS(fuse.Fuse):
 		return: [[('file1', 0), ('file2', 0), ... ]]
 		"""
 
-		print '*** getdir', path
+		logging.info('*** getdir %s' % path)
 		return -errno.ENOSYS
 
 	def mythread ( self ):
-		print '*** mythread'
+		logging.info('*** mythread')
 		return -errno.ENOSYS
 
 	def chmod ( self, path, mode ):
-		print '*** chmod', path, oct(mode)
+		logging.info('*** chmod', path, oct(mode))
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -152,7 +153,7 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def chown ( self, path, uid, gid ):
-		print '*** chown', path, uid, gid
+		logging.info('*** chown', path, uid, gid)
 
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -162,7 +163,7 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def fsync ( self, path, isFsyncFile ):
-		print '*** fsync', path, isFsyncFile
+		logging.info('*** fsync', path, isFsyncFile)
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -172,15 +173,15 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def link ( self, targetPath, linkPath ):
-		print '*** link', targetPath, linkPath
+		logging.info('*** link', targetPath, linkPath)
 		return -errno.ENOSYS
 
 	def mkdir ( self, path, mode ):
-		print '*** mkdir', path, oct(mode)
+		logging.info('*** mkdir', path, oct(mode))
 		return -errno.ENOSYS
 
 	def mknod ( self, path, mode, dev ):
-		print '*** mknod', path, oct(mode), dev
+		logging.info('*** mknod', path, oct(mode), dev)
 		
 		if getDepth(path) != 1:
 			return -errno.ENOSYS
@@ -193,28 +194,28 @@ class DWFS(fuse.Fuse):
 		return 0
 
 	def readlink ( self, path ):
-		print '*** readlink', path
+		logging.info('*** readlink', path)
 		return -errno.ENOSYS
 
 	# TODO: make this do something when open does something
 	def rename ( self, oldPath, newPath ):
-		print '*** rename', oldPath, newPath
+		logging.info('*** rename', oldPath, newPath)
 		return -errno.ENOSYS
 
 	def rmdir ( self, path ):
-		print '*** rmdir', path
+		logging.info('*** rmdir', path)
 		return -errno.ENOSYS
 
 	def statfs ( self ):
-		print '*** statfs'
+		logging.info('*** statfs')
 		return -errno.ENOSYS
 
 	def symlink ( self, targetPath, linkPath ):
-		print '*** symlink', targetPath, linkPath
+		logging.info('*** symlink', targetPath, linkPath)
 		return -errno.ENOSYS
 
 	def truncate ( self, path, size ):
-		print '*** truncate', path, size
+		logging.info('*** truncate', path, size)
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -224,7 +225,7 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def unlink ( self, path ):
-		print '*** unlink', path
+		logging.info('*** unlink', path)
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -234,7 +235,7 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def utime ( self, path, times ):
-		print '*** utime', path, times
+		logging.info('*** utime', path, times)
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
@@ -244,14 +245,14 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def open ( self, path, flags ):
-		print '*** open', path, flags
+		logging.info('*** open %s%s' % (path, flags))
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
 				try:
 					fh = plugin.getFileHandle(path, flags)
 				except IOError:
-					return -errno.errno
+					return -errno.ENOENT
 				
 				self.open_files[path] = fh
 				return 0
@@ -259,7 +260,7 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def read ( self, path, length, offset ):
-		print '*** read', path, length, offset
+		logging.info('*** read %s %i %i' % (path, length, offset))
 		
 		if path in self.open_files:
 			fh = self.open_files[path]
@@ -270,7 +271,7 @@ class DWFS(fuse.Fuse):
 		return os.read(fh, length)
 
 	def write ( self, path, buf, offset ):
-		print '*** write', path, buf, offset
+		logging.info('*** write %s %s %i' % (path, buf, offset))
 
 		if path in self.open_files:
 			fh = self.open_files[path]
@@ -282,10 +283,10 @@ class DWFS(fuse.Fuse):
 		return len(buf)
 
 	def release ( self, path, flags ):
-		print '*** release', path, flags
+		logging.info('*** release %s %s' % (path, flags))
 
 		if path in self.open_files:
-			self.open_file[path].close()
+			os.close(self.open_files[path])
 			del self.open_files[path]
 
 			for plugin in plugins:
@@ -298,6 +299,7 @@ class DWFS(fuse.Fuse):
 
 if __name__ == '__main__':
 	import argparse, sys
+	logging.basicConfig(level=logging.INFO)
 
 	script_name = sys.argv[0]
 	parser = argparse.ArgumentParser(description='Create a Distributed Web File System (DWFS)')

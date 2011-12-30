@@ -1,14 +1,19 @@
 import argparse
-import os
-import stat
 import getpass
+import logging
+import os
+import random
+import stat
+import string
+import tempfile
 import urllib
 import urllib2
 from FSPlugin import FSPlugin
 
 OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth'
 OAUTH_TOKEN_URL = 'https://accounts.google.com/o/oauth2/token'
-DOCS_SCOPE = 'https://docs.google.com/feeds/ https://spreadsheets.google.com/feeds/ https://docs.googleusercontent.com/'
+DOCS_SCOPE = 'https://docs.google.com/feeds/%20https://spreadsheets.google.com/feeds/%20https://docs.googleusercontent.com/'
+CACHE_DIR = '/tmp/dwfs/'
 
 class GoogleDocsFSPlugin(FSPlugin):
 	@staticmethod
@@ -33,12 +38,11 @@ class GoogleDocsFSPlugin(FSPlugin):
 		params = urllib.urlencode({
 			'client_id' : self.client_id,
 			'redirect_uri' : self.redirect_uri,
-			'scope' : DOCS_SCOPE,
 			'response_type' : 'code'
 		})
 		
 		import webbrowser
-		webbrowser.open_new('{0}?{1}'.format(OAUTH_AUTH_URL, params))
+		webbrowser.open_new('{0}?{1}&scope={2}'.format(OAUTH_AUTH_URL, params, DOCS_SCOPE))
 		self.refresh_token = raw_input('Enter access code: ')
 		self.getToken(False)
 
@@ -85,7 +89,7 @@ class GoogleDocsFSPlugin(FSPlugin):
 				f = urllib2.urlopen(url)
 				data = f.read()
 			except urllib2.HTTPError, msg:
-				print msg
+				logging.error(msg)
 				data = None
 
 			if data != None:
@@ -144,13 +148,13 @@ class GoogleDocsFSPlugin(FSPlugin):
 		pass
 	
 	def fsync(self, path):
-		os.fsync(self.source_dir + path)
+		pass
 	
 	def truncateFile(self, path, size):
-		os.truncate(self.source_dir + path, size)
+		pass
 	
 	def deleteFile(self, path):
-		os.remove(self.source_dir + path)
+		pass
 	
 	def setTimes(self, path, times):
 		pass
@@ -159,12 +163,25 @@ class GoogleDocsFSPlugin(FSPlugin):
 		entry = self.files[path]
 		content_tag = entry.getElementsByTagName('content')[0]
 		file_url = content_tag.getAttribute('src')
-		print 'url:', file_url
-		url = urllib2.urlopen(file_url)
-		temp_file = open(self.cache_dir + '/' + path, 'w')
-		temp_file.write(url.read())
-		temp_file.close()
-		return os.open(temp_file, flags)
+		file_url = file_url.replace('&', '&amp') + '&ampaccess_token=' + self.access_token
+		temp_file_name = 'dwfs_' + ''.join(random.choice(string.digits) for x in range(10))
+		temp_file_path = CACHE_DIR + temp_file_name
+
+		try:
+			logging.info('Downloading file: %s' % file_url)
+			url = urllib2.urlopen(file_url)
+
+			if not os.path.exists(CACHE_DIR):
+				os.mkdir(CACHE_DIR)
+
+			temp_file = open(temp_file_path, 'wb')
+			temp_file.write(url.read())
+			temp_file.close()
+		except urllib2.HTTPError, msg:
+			logging.error(msg)
+			raise
+
+		return os.open(CACHE_DIR + temp_file_name, flags)
 	
 	def closedFile(self, path):
 		pass
