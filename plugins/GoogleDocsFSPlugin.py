@@ -8,6 +8,7 @@ import stat
 import string
 import tempfile
 from threading import Event, Thread
+import time
 import urllib
 import urllib2
 from FSPlugin import FSPlugin
@@ -16,6 +17,82 @@ OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth'
 OAUTH_TOKEN_URL = 'https://accounts.google.com/o/oauth2/token'
 DOCS_SCOPE = 'https://docs.google.com/feeds/%20https://spreadsheets.google.com/feeds/%20https://docs.googleusercontent.com/'
 CACHE_DIR = '/tmp/dwfs/'
+
+CHUNK_SIZE = 1024
+
+WRITE_HANDLE = 0
+READ_HANDLE = 1
+SIZE = 2
+OPEN = 3
+DOWNLOADED = 4
+PATH = 5
+
+class GoogleDocsCache:
+
+	def __init__(self):
+		self.files = dict()
+
+		if not os.path.exists(CACHE_DIR):
+			os.mkdir(CACHE_DIR)
+	
+	def contains_file(self, path):
+		return path in self.files
+	
+	def download_file_helper(self, url, cache_entry, access_token):
+
+		file_url = url.replace('&amp;', '&')
+
+		try:
+			logging.info('*** *** Downloading file: %s' % file_url)
+			request = urllib2.Request(file_url)
+			request.add_header('GData-Version', '3.0')
+			request.add_header('Authorization', 'OAuth %s' % access_token)
+			url = urllib2.urlopen(request)
+			logging.info('*** *** Got code: %i' % url.getcode())
+			
+			while True:
+				cache_entry[WRITE_HANDLE].write(url.read(CHUNK_SIZE))
+				cache_entry[SIZE] += CHUNK_SIZE
+
+			cache_entry[DOWNLOADED] = True
+
+		except urllib2.HTTPError, msg:
+			logging.error(msg)
+			raise
+
+	def download_file(self, path, url, access_token):
+		temp_file_name = 'dwfs_' + ''.join(random.choice(string.digits) for x in range(10))
+		temp_file_path = CACHE_DIR + temp_file_name
+		cache_entry = [open(temp_file_path, 'wb'), None, 0, False, False, temp_file_path]
+		self.files[path] = cache_entry
+		Thread(target = self.download_file_helper, args = (url, cache_entry, access_token)).start()
+	
+	def open(self, path, mode):
+		cache_entry = self.files[path]
+
+		cache_entry[OPEN] = True
+		cache_entry[READ_HANDLE] = open(cache_entry[PATH], 'rb')
+
+	def read(self, path, length, offset):
+		cache_entry = self.files[path]
+
+		while True:
+			if cache_entry[SIZE] - offset <= 0:
+				time.sleep(0.1)
+				continue
+
+			if offset < cache_entry[SIZE]:
+				cache_entry[READ_HANDLE].seek(offset)
+			
+			if offset + length > cache_entry[SIZE]:
+				return cache_entry[READ_HANDLE].read(cache_entry[SIZE] - offset)
+			else:
+				return cache_entry[READ_HANDLE].read(length)
+	
+	def close(self, path):
+		cache_entry = self.files[path]
+		cache_entry[OPEN] = False
+		cache_entry[READ_HANDLE].close()
 
 class GoogleDocsFSPlugin(FSPlugin):
 	@staticmethod
@@ -52,8 +129,8 @@ class GoogleDocsFSPlugin(FSPlugin):
 		self.refresh_time = 0
 
 		self.files = dict()
-		self.open_files = dict()
 		self.cache_dir = '/tmp/dwfs-' + getpass.getuser()
+		self.cache = GoogleDocsCache()
 	
 	def getToken(self, refresh):
 		if refresh:
@@ -177,82 +254,19 @@ class GoogleDocsFSPlugin(FSPlugin):
 	def setTimes(self, path, times):
 		pass
 
-	def getFileHandle(self, path, flags):
-		entry = self.files[path]
-		file_url = entry['file_url'].replace('&amp;', '&')
-		temp_file_name = 'dwfs_' + ''.join(random.choice(string.digits) for x in range(10))
-		temp_file_path = CACHE_DIR + temp_file_name
-
-		try:
-			logging.info('*** *** Downloading file: %s' % file_url)
-			request = urllib2.Request(file_url)
-			request.add_header('GData-Version', '3.0')
-			request.add_header('Authorization', 'OAuth %s' % self.access_token)
-			url = urllib2.urlopen(request)
-			logging.info('*** *** Got code: %i' % url.getcode())
-
-			if not os.path.exists(CACHE_DIR):
-				os.mkdir(CACHE_DIR)
-
-			temp_file = open(temp_file_path, 'wb')
-			temp_file.write(url.read())
-			temp_file.close()
-		except urllib2.HTTPError, msg:
-			logging.error(msg)
-			raise
-
-		return os.open(CACHE_DIR + temp_file_name, flags)
-	
-	def download_file(self, url, open_file):
-		file_url = url.replace('&amp;', '&')
-
-		try:
-			logging.info('*** *** Downloading file: %s' % file_url)
-			request = urllib2.Request(file_url)
-			request.add_header('GData-Version', '3.0')
-			request.add_header('Authorization', 'OAuth %s' % self.access_token)
-			url = urllib2.urlopen(request)
-			logging.info('*** *** Got code: %i' % url.getcode())
-			
-			open_file[0].write(url.read())
-			open_file[1].set()
-
-		except urllib2.HTTPError, msg:
-			logging.error(msg)
-			raise
-
 	def open(self, path, flags):
-		logging.info('*** *** Opening file')
+		if not self.cache.contains_file(path):
+			entry = self.files[path]
+			file_url = entry['file_url'].replace('&amp;', '&')
+			self.cache.download_file(path, file_url, self.access_token)
 
-		if not os.path.exists(CACHE_DIR):
-			os.mkdir(CACHE_DIR)
-
-		temp_file_name = 'dwfs_' + ''.join(random.choice(string.digits) for x in range(10))
-		temp_file_path = CACHE_DIR + temp_file_name
-
-		if path in self.open_files:
-			logging.info('*** *** File already open')
-			return
-
-		self.open_files[path] = (open(temp_file_path, 'w+b'), Event())
-
-		entry = self.files[path]
-		file_url = entry['file_url'].replace('&amp;', '&')
-		Thread(target = self.download_file, args = (file_url, self.open_files[path])).start()
-		logging.info('*** *** Starting download')
+		self.cache.open(path, flags)
 
 	def read(self, path, length, offset):
-		open_file = self.open_files[path]
-		open_file[1].wait() # wait until the file is finished downloading
+		return self.cache.read(path, length, offset)
 
-		open_file[0].seek(offset)
-		return open_file[0].read(length)
-	
 	def write(self, path, buf, offset):
 		pass
 	
 	def release(self, path, flags):
-		open_file = self.open_files[path]
-		open_file[1].wait() # wait until the file is finished downloading
-		open_file[0].close()
-		del self.open_files[path]
+		self.cache.close(path)
