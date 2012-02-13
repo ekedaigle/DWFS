@@ -245,16 +245,11 @@ class DWFS(fuse.Fuse):
 		return -errno.ENOENT
 
 	def open ( self, path, flags ):
-		logging.info('*** open %s%s' % (path, flags))
+		logging.info('*** open %s %s' % (path, flags))
 		
 		for plugin in self.plugins:
 			if plugin.containsFile(path):
-				try:
-					fh = plugin.getFileHandle(path, flags)
-				except IOError:
-					return -errno.ENOENT
-				
-				self.open_files[path] = fh
+				plugin.open(path, flags)
 				return 0
 
 		return -errno.ENOENT
@@ -262,40 +257,31 @@ class DWFS(fuse.Fuse):
 	def read ( self, path, length, offset ):
 		logging.info('*** read %s %i %i' % (path, length, offset))
 		
-		if path in self.open_files:
-			fh = self.open_files[path]
-		else:
-			return -errno.ENOENT
+		for plugin in self.plugins:
+			if plugin.containsFile(path):
+				data = plugin.read(path, length, offset)
+				break
 
-		os.read(fh, offset)
-		return os.read(fh, length)
+		logging.info('*** *** read %i bytes' % (len(data)))
+		return data
 
 	def write ( self, path, buf, offset ):
 		logging.info('*** write %s %s %i' % (path, buf, offset))
 
-		if path in self.open_files:
-			fh = self.open_files[path]
-		else:
-			return -errno.ENOENT
+		for plugin in self.plugins:
+			if plugin.containsFile(path):
+				plugin.write(path, buf, offset)
+				break
 
-		os.read(fh, offset)
-		os.write(fh, buf)
 		return len(buf)
 
 	def release ( self, path, flags ):
 		logging.info('*** release %s %s' % (path, flags))
 
-		if path in self.open_files:
-			os.close(self.open_files[path])
-			del self.open_files[path]
-
-			for plugin in plugins:
-				if plugin.containsFile(path):
-					plugin.closedFile(path)
-					break
-			return 0
-		else:
-			return -errno.ENOENT
+		for plugin in self.plugins:
+			if plugin.containsFile(path):
+				plugin.release(path, flags)
+				break
 
 if __name__ == '__main__':
 	import argparse, sys
