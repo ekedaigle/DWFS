@@ -3,9 +3,10 @@ import fuse
 
 import logging
 from stat import *
-import os     # for filesystem modes (O_RDONLY, etc)
-import errno   # for error number codes (ENOENT, etc)
-               # - note: these must be returned as negatives
+import os
+import errno # these must be returned as negatives
+import verbose
+verbose.print_func = logging.info
 
 from FSPlugin import FSPlugin
 
@@ -74,11 +75,12 @@ class DWFS(fuse.Fuse):
         self.plugins = plugins
         self.open_files = dict()
 
-        logging.info('Init complete.')
+        logging.info('Initialized with %i plugins' % len(self.plugins))
     
     def fsinit(self):
         os.chdir(self.cwd)
 
+    @verbose.verbose
     def getattr(self, path):
         """
         - st_mode (protection bits)
@@ -94,7 +96,6 @@ class DWFS(fuse.Fuse):
                     or the time of creation on Windows).
         """
 
-        logging.info('*** getattr %s' % path)
         os_stat = None
 
         if path == '/':
@@ -121,30 +122,30 @@ class DWFS(fuse.Fuse):
         else:
             return -errno.ENOENT
 
+    @verbose.verbose
     def readdir(self, path, offset):
         yield fuse.Direntry('.')
         yield fuse.Direntry('..')
 
-        if path == '/':
-            for plugin in self.plugins:
-                for f in plugin.getAllFiles():
+        for plugin in self.plugins:
+            if plugin.containsFile(path):
+                for f in plugin.readdir(path):
                     yield fuse.Direntry(f.split('/')[-1])
 
+    @verbose.verbose
     def getdir(self, path):
         """
         return: [[('file1', 0), ('file2', 0), ... ]]
         """
 
-        logging.info('*** getdir %s' % path)
         return -errno.ENOSYS
 
+    @verbose.verbose
     def mythread ( self ):
-        logging.info('*** mythread')
         return -errno.ENOSYS
 
+    @verbose.verbose
     def chmod ( self, path, mode ):
-        logging.info('*** chmod', path, oct(mode))
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.changeMode(path, mode)
@@ -152,9 +153,8 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def chown ( self, path, uid, gid ):
-        logging.info('*** chown', path, uid, gid)
-
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.changeOwn(path, uid, gid)
@@ -162,9 +162,8 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def fsync ( self, path, isFsyncFile ):
-        logging.info('*** fsync', path, isFsyncFile)
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.fsync(path)
@@ -172,17 +171,16 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def link ( self, targetPath, linkPath ):
-        logging.info('*** link', targetPath, linkPath)
         return -errno.ENOSYS
 
+    @verbose.verbose
     def mkdir ( self, path, mode ):
-        logging.info('*** mkdir', path, oct(mode))
         return -errno.ENOSYS
 
+    @verbose.verbose
     def mknod ( self, path, mode, dev ):
-        logging.info('*** mknod', path, oct(mode), dev)
-        
         if getDepth(path) != 1:
             return -errno.ENOSYS
 
@@ -193,31 +191,30 @@ class DWFS(fuse.Fuse):
         
         return 0
 
+    @verbose.verbose
     def readlink ( self, path ):
-        logging.info('*** readlink', path)
         return -errno.ENOSYS
 
     # TODO: make this do something when open does something
+    @verbose.verbose
     def rename ( self, oldPath, newPath ):
-        logging.info('*** rename', oldPath, newPath)
         return -errno.ENOSYS
 
+    @verbose.verbose
     def rmdir ( self, path ):
-        logging.info('*** rmdir', path)
         return -errno.ENOSYS
 
-    def statfs ( self ):
-        logging.info('*** statfs')
+    @verbose.verbose
+    def statfs(self):
         statvfs = fuse.StatVfs()
         return statvfs
 
+    @verbose.verbose
     def symlink ( self, targetPath, linkPath ):
-        logging.info('*** symlink', targetPath, linkPath)
         return -errno.ENOSYS
 
+    @verbose.verbose
     def truncate ( self, path, size ):
-        logging.info('*** truncate', path, size)
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.truncateFile(path)
@@ -225,9 +222,8 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def unlink ( self, path ):
-        logging.info('*** unlink', path)
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.deleteFile(path)
@@ -235,9 +231,8 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def utime ( self, path, times ):
-        logging.info('*** utime', path, times)
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.deleteFile(path)
@@ -245,9 +240,8 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def open ( self, path, flags ):
-        logging.info('*** open %s %s' % (path, flags))
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.open(path, flags)
@@ -255,20 +249,17 @@ class DWFS(fuse.Fuse):
 
         return -errno.ENOENT
 
+    @verbose.verbose
     def read ( self, path, length, offset ):
-        logging.info('*** read %s %i %i' % (path, length, offset))
-        
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 data = plugin.read(path, length, offset)
                 break
 
-        logging.info('*** *** read %i bytes' % (len(data)))
         return data
 
+    @verbose.verbose
     def write ( self, path, buf, offset ):
-        logging.info('*** write %s %s %i' % (path, buf, offset))
-
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.write(path, buf, offset)
@@ -276,9 +267,8 @@ class DWFS(fuse.Fuse):
 
         return len(buf)
 
+    @verbose.verbose
     def release ( self, path, flags ):
-        logging.info('*** release %s %s' % (path, flags))
-
         for plugin in self.plugins:
             if plugin.containsFile(path):
                 plugin.release(path, flags)
