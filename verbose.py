@@ -2,6 +2,13 @@ import functools
 import inspect
 import sys
 
+try:
+    import fuse
+    enable_fuse = True
+except ImportError:
+    enable_fuse = False
+    
+
 print_func = sys.stdout.write
 
 def make_str(arg):
@@ -10,6 +17,9 @@ def make_str(arg):
             return '{} bytes'.format(len(arg))
         else:
             return '\'{}\''.format(arg)
+    elif enable_fuse and isinstance(arg, fuse.StatVfs):
+        return '({}, {}, {}, {}, {}, {}, {})'.format(arg.f_bsize, arg.f_frsize,
+            arg.f_blocks, arg.f_bfree, arg.f_bavail, arg.f_files, arg.f_ffree)
     else:
         return str(arg)
 

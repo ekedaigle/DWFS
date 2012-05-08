@@ -206,8 +206,23 @@ class DWFS(fuse.Fuse):
 
     @verbose.verbose
     def statfs(self):
-        statvfs = fuse.StatVfs()
-        return statvfs
+        st = fuse.StatVfs()
+        st.f_bsize = 1024
+        st.f_frsize = 1024
+
+        total_bytes = 0
+        free_bytes = 0
+
+        for plugin in self.plugins:
+            space = plugin.getSpace()
+            total_bytes += space[0]
+            free_bytes += space[1]
+
+        st.f_blocks = total_bytes / st.f_bsize
+        st.f_bfree = free_bytes / st.f_bsize
+        st.f_bavail = st.f_bfree
+
+        return st
 
     @verbose.verbose
     def symlink ( self, targetPath, linkPath ):
@@ -275,12 +290,14 @@ class DWFS(fuse.Fuse):
                 break
 
 if __name__ == '__main__':
-    import argparse, sys
+    import argparse, ConfigParser, sys
     logging.basicConfig(level=logging.INFO)
 
+    # setup the argument parser
     script_name = sys.argv[0]
     parser = argparse.ArgumentParser(description='Create a Distributed Web File System (DWFS)')
     plugin_classes = find_subclasses('plugins/', FSPlugin)
+    plugin_classes = list(set(plugin_classes)) # remove duplicates
     
     for plugin_class in plugin_classes:
         plugin_class.addArguments(parser)
@@ -295,12 +312,47 @@ if __name__ == '__main__':
     if args.foreground:
         sys.argv.append('-f')
 
+    # load all the plugins
     plugins = []
     for plugin_class in plugin_classes:
         p = plugin_class.createFromArgs(args)
 
         if p != None:
             plugins.extend(p)
+
+    # load the config file
+    config = ConfigParser.RawConfigParser()
+    __location__ = os.path.realpath(os.path.join(os.getcwd(),
+        os.path.dirname(__file__)))
+    config_path = os.path.join(__location__, 'config.cfg')
+
+    config.read(config_path)
+
+    for plugin in plugins:
+        config_params = plugin.getConfigParams()
+
+        if not config_params:
+            continue
+
+        configuration = dict()
+        section_exists = config.has_section(config_params[0])
+
+        if not section_exists:
+            config.add_section(config_params[0])
+
+        for param in config_params[1]:
+            if not section_exists:
+                config.set(config_params[0], param, '')
+
+            configuration[param] = config.get(config_params[0], param)
+
+        plugin.updateConfig(configuration)
+
+        for key in configuration:
+            config.set(config_params[0], key, configuration[key])
+    
+    with open(config_path, 'wb') as config_file:
+        config.write(config_file)
 
     fuse.fuse_python_api = (0, 2)
     fs = DWFS(plugins)

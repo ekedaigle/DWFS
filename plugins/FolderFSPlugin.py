@@ -3,22 +3,25 @@ import os
 from FSPlugin import FSPlugin
 
 class FolderFSPlugin(FSPlugin):
-    @staticmethod
-    def addArguments(parser):
-        parser.add_argument('--folder', dest='folder_dirs', nargs='+', help='Use the given folder')
+    arg_name = 'folder'
+
+    @classmethod
+    def addArguments(cls, parser):
+        parser.add_argument('--%s' % cls.arg_name, dest='%s_dirs' % cls.arg_name, nargs='+', help='Use the given folder')
     
-    @staticmethod
-    def createFromArgs(args):
-        dirs = args.folder_dirs
+    @classmethod
+    def createFromArgs(cls, args):
+        dirs = getattr(args, '%s_dirs' % cls.arg_name)
         folder_plugins = []
 
         if dirs != None:
             for d in dirs:
-                folder_plugins.append(FolderFSPlugin(d))
+                folder_plugins.append(cls(d))
         
         return folder_plugins
 
     def __init__(self, folder_dir):
+        super(FolderFSPlugin, self).__init__()
         self.source_dir = folder_dir
         self.open_files = dict()
     
