@@ -41,7 +41,8 @@ class FolderFSPlugin(FSPlugin):
         return True
     
     def createNewFile(self, name, mode, dev):
-        os.mknod(self.source_dir + '/' + name, mode, dev)
+        f = open(self.source_dir + '/' + name, 'wb')
+        f.close()
     
     def getAttributes(self, path):
         st = os.stat(self.source_dir + path)

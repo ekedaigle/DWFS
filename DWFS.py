@@ -118,6 +118,7 @@ class DWFS(fuse.Fuse):
             st.st_atime = os_stat[ST_ATIME]
             st.st_mtime = os_stat[ST_MTIME]
             st.st_ctime = os_stat[ST_CTIME]
+            print 'Stats:', os_stat
             return st
         else:
             return -errno.ENOENT
@@ -186,7 +187,7 @@ class DWFS(fuse.Fuse):
 
         for plugin in self.plugins:
             if plugin.canStoreFile(path):
-                plugin.createNewFile(path.replace('/', ''), mode, dev)
+                plugin.createNewFile(path.replace('/', ''), mode, 0 if dev == None else dev)
                 break
         
         return 0
@@ -262,6 +263,18 @@ class DWFS(fuse.Fuse):
                 plugin.open(path, flags)
                 return 0
 
+        return -errno.ENOENT
+
+    @verbose.verbose
+    def create(self, path, flags, mode):
+        head, tail = os.path.split(path)
+
+        for plugin in self.plugins:
+            if plugin.containsFile(head):
+                plugin.createNewFile(path, mode, 0)
+                plugin.open(path, flags)
+                return 0
+        
         return -errno.ENOENT
 
     @verbose.verbose
